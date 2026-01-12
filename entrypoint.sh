@@ -13,15 +13,12 @@ if [ ! -f /var/www/html/storage/installed ]; then
     echo "Starting Auto Installation..."
     
     php artisan install \
-        --db-host=akaunting-db \
-        --db-name=akaunting \
-        --db-username=akaunting \
-        --db-password=akaunting_pass \
-        --admin-email=admin@company.com \
-        --admin-password=password123 \
-        --locale=en-GB \
-        --company-name="My Company" \
-        --company-email="company@test.com"
+        --db-host="akaunting-db" \
+        --db-name="akaunting" \
+        --db-username="akaunting" \
+        --db-password="akaunting_pass" \
+        --admin-email="admin@company.com" \
+        --admin-password="password123"
     
     touch /var/www/html/storage/installed
     echo "Installation Completed Successfully!"

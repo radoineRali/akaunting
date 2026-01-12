@@ -15,7 +15,9 @@ COPY . /var/www/html
 
 RUN composer install --no-interaction --optimize-autoloader --no-dev --ignore-platform-reqs
 
-RUN npm install && npm run dev
+ENV NODE_OPTIONS="--max-old-space-size=1024"
+
+RUN npm install && npm run prod
 
 RUN cp .env.example .env && php artisan key:generate --force
 

@@ -6,62 +6,94 @@ on:
       - master
 
 jobs:
-  build-and-deploy:
+  build-and-push:
     runs-on: ubuntu-latest
-    environment: deploy_akaunting
-
+    environment: Deploy_Akaunting
     steps:
-    # 1️⃣ Checkout الكود
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    # 2️⃣ إعداد Docker Buildx
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-    # 3️⃣ تسجيل الدخول لـ Docker Hub
-    - name: Login to Docker Hub
-      uses: docker/login-action@v3
-      with:
-        username: ${{ vars.DOCKERHUB_USERNAME }}
-        password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-    # 4️⃣ Build و Push Docker image (استخدام الكاش لجعل البناء أسرع)
-    - name: Build and push Docker image
-      uses: docker/build-push-action@v5
-      with:
-        context: .
-        push: true
-        tags: ${{ vars.DOCKERHUB_USERNAME }}/akaunting:latest
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
+      # البناء على GitHub لتجنب نفاذ ذاكرة EC2
+      - name: Build and Push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/akaunting-app:latest
 
-    # 5️⃣ Deploy على EC2
-    - name: Deploy to EC2
-      uses: appleboy/ssh-action@v1.0.3
-      with:
-        host: ${{ vars.EC2_HOST }}
-        username: ${{ vars.EC2_USER }}
-        key: ${{ secrets.EC2_SSH_KEY }}
-        command_timeout: 20m  # زيادة وقت المهلة لتجنب الـ Timeout
-        script: |
-          # التأكد من وجود المجلد
-          mkdir -p ~/akaunting
-          cd ~/akaunting || exit
+  deploy-on-ec2:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    environment: Deploy_Akaunting
+    steps:
+      - name: Deploy on EC2 via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ vars.EC2_HOST }}
+          username: ${{ vars.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            # إنشاء مجلد العمل
+            mkdir -p /home/${{ vars.EC2_USER }}/akaunting
+            cd /home/${{ vars.EC2_USER }}/akaunting
 
-          echo "Pull latest image..."
-          docker pull ${{ vars.DOCKERHUB_USERNAME }}/akaunting:latest
+            echo "Pulling latest image..."
+            sudo docker pull ${{ secrets.DOCKERHUB_USERNAME }}/akaunting-app:latest
 
-          echo "Updating docker-compose.yml..."
-          # ملاحظة: إذا كنت تريد تحديث ملف الكومبوز تلقائياً، يفضل استخدامه مع سكريبت النقل
-          # لكن حالياً سنفترض أنه موجود أو سنقوم بتشغيل الحاوية مباشرة
-          
-          echo "Restarting containers..."
-          # استخدام -f لضمان المسار الصحيح وإعادة التشغيل بالصورة الجديدة
-          docker compose down --remove-orphans || true
-          docker compose up -d
+            echo "Creating docker-compose.yml..."
+            # إنشاء ملف الكومبوز في السيرفر بناءً على ملفك الذي أرسلته
+            cat <<EOF > docker-compose.yml
+            version: '3.8'
+            services:
+              akaunting-app:
+                image: ${{ secrets.DOCKERHUB_USERNAME }}/akaunting-app:latest
+                container_name: akaunting_app
+                ports:
+                  - "80:80"
+                environment:
+                  - APP_ENV=local
+                  - APP_DEBUG=true
+                  - APP_URL=http://${{ vars.EC2_HOST }}
+                  - DB_CONNECTION=mysql
+                  - DB_HOST=akaunting-db
+                  - DB_PORT=3306
+                  - DB_DATABASE=akaunting
+                  - DB_USERNAME=akaunting
+                  - DB_PASSWORD=akaunting_pass
+                depends_on:
+                  - akaunting-db
+                restart: always
 
-          echo "Cleanup: Removing dangling images to save space..."
-          docker image prune -f
+              akaunting-db:
+                image: mariadb:10.7
+                container_name: akaunting_db
+                environment:
+                  - MYSQL_DATABASE=akaunting
+                  - MYSQL_USER=akaunting
+                  - MYSQL_PASSWORD=akaunting_pass
+                  - MYSQL_ROOT_PASSWORD=root_pass
+                volumes:
+                  - akaunting_db_data:/var/lib/mysql
+                restart: always
 
-          echo "Deployment finished ✅"
+            volumes:
+              akaunting_db_data:
+            EOF
+
+            echo "Restarting Services..."
+            sudo docker compose down || true
+            sudo docker compose up -d
+
+            echo "Cleaning up..."
+            sudo docker image prune -f
+            
+            echo "Deployment finished ✅"

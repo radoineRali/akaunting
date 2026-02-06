@@ -3,13 +3,12 @@ name: CI/CD Akaunting DevSecOps
 on:
   push:
     branches:
-      - master
+      - main
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     environment: Deploy_Akaunting
-
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
@@ -20,8 +19,8 @@ jobs:
     - name: Login to Docker Hub
       uses: docker/login-action@v3
       with:
-        username: ${{ vars.DOCKERHUB_USERNAME }}
-        password: ${{ secrets.DOCKERHUB_TOKEN }}
+        username: ${{ vars.DOCKERHUB_USERNAME }}   
+        password: ${{ secrets.DOCKERHUB_TOKEN }}   
 
     - name: Build and push Docker image
       uses: docker/build-push-action@v5
@@ -33,9 +32,9 @@ jobs:
     - name: Deploy to EC2
       uses: appleboy/ssh-action@v1.0.3
       with:
-        host: ${{ vars.EC2_HOST }}
-        username: ${{ vars.EC2_USER }}
-        key: ${{ secrets.EC2_SSH_KEY }}
+        host: ${{ vars.EC2_HOST }}            
+        username: ${{ vars.EC2_USER }}        
+        key: ${{ secrets.EC2_SSH_KEY }}       
         script: |
           echo "Pull latest image"
           docker pull ${{ vars.DOCKERHUB_USERNAME }}/akaunting:latest

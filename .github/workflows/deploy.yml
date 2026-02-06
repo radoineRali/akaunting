@@ -8,54 +8,60 @@ on:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-    # تأكد أن اسم الـ environment مطابق تماماً لما هو في إعدادات GitHub
-    environment: Deploy_Akaunting 
+    environment: deploy_akaunting
 
     steps:
+    # 1️⃣ Checkout الكود
     - name: Checkout code
       uses: actions/checkout@v4
 
+    # 2️⃣ إعداد Docker Buildx
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
 
-    # بناء الصورة وضغطها لتقليل وقت النقل
-    - name: Build and Save Docker image
-      run: |
-        docker build -t akaunting-app:latest .
-        docker save akaunting-app:latest | gzip > akaunting-app.tar.gz
-
-    # نسخ ملف الـ Image المضغوط + ملف docker-compose إلى السيرفر
-    - name: Copy Files to EC2
-      uses: appleboy/scp-action@master
+    # 3️⃣ تسجيل الدخول لـ Docker Hub
+    - name: Login to Docker Hub
+      uses: docker/login-action@v3
       with:
-        host: ${{ vars.EC2_HOST }}
-        username: ${{ vars.EC2_USER }}
-        key: ${{ secrets.EC2_SSH_KEY }}
-        # سنقوم بنقل الـ Image وملف الـ Compose لضمان عمل السيرفر
-        source: "akaunting-app.tar.gz,docker-compose.yml"
-        target: "/home/${{ vars.EC2_USER }}/akaunting"
+        username: ${{ vars.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-    - name: Deploy on EC2
+    # 4️⃣ Build و Push Docker image (استخدام الكاش لجعل البناء أسرع)
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        push: true
+        tags: ${{ vars.DOCKERHUB_USERNAME }}/akaunting:latest
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+    # 5️⃣ Deploy على EC2
+    - name: Deploy to EC2
       uses: appleboy/ssh-action@v1.0.3
       with:
         host: ${{ vars.EC2_HOST }}
         username: ${{ vars.EC2_USER }}
         key: ${{ secrets.EC2_SSH_KEY }}
-        # زيادة الوقت لأن عملية load تأخذ وقتاً
-        command_timeout: 20m 
+        command_timeout: 20m  # زيادة وقت المهلة لتجنب الـ Timeout
         script: |
-          cd /home/${{ vars.EC2_USER }}/akaunting
+          # التأكد من وجود المجلد
+          mkdir -p ~/akaunting
+          cd ~/akaunting || exit
+
+          echo "Pull latest image..."
+          docker pull ${{ vars.DOCKERHUB_USERNAME }}/akaunting:latest
+
+          echo "Updating docker-compose.yml..."
+          # ملاحظة: إذا كنت تريد تحديث ملف الكومبوز تلقائياً، يفضل استخدامه مع سكريبت النقل
+          # لكن حالياً سنفترض أنه موجود أو سنقوم بتشغيل الحاوية مباشرة
           
-          echo "Unzipping and Loading Docker image..."
-          gunzip -c akaunting-app.tar.gz | docker load
-
-          echo "Cleaning up old containers..."
+          echo "Restarting containers..."
+          # استخدام -f لضمان المسار الصحيح وإعادة التشغيل بالصورة الجديدة
           docker compose down --remove-orphans || true
-
-          echo "Start new containers..."
           docker compose up -d
 
-          echo "Removing tar file to save space..."
-          rm akaunting-app.tar.gz
-          
+          echo "Cleanup: Removing dangling images to save space..."
+          docker image prune -f
+
           echo "Deployment finished ✅"

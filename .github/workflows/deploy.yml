@@ -3,7 +3,7 @@ name: CI/CD Akaunting DevSecOps
 on:
   push:
     branches:
-      - main
+      - master
 
 jobs:
   build-and-deploy:

@@ -42,15 +42,12 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           command_timeout: 20m
           script: |
-            # 1. تهيئة مجلد المشروع
             mkdir -p /home/${{ vars.EC2_USER }}/akaunting
             cd /home/${{ vars.EC2_USER }}/akaunting
 
-            # 2. إنشاء ملف docker-compose.yml لربط التطبيق بالقاعدة
             cat <<EOF > docker-compose.yml
             version: '3.8'
             services:
-              # خدمة قاعدة البيانات
               db:
                 image: mariadb:10.7
                 restart: always
@@ -62,7 +59,6 @@ jobs:
                 volumes:
                   - db_data:/var/lib/mysql
 
-              # خدمة التطبيق (التي بنيناها في الخطوة السابقة)
               app:
                 image: ${{ secrets.DOCKERHUB_USERNAME }}/akaunting-app:latest
                 restart: always
@@ -80,14 +76,12 @@ jobs:
               db_data:
             EOF
 
-            # 3. جلب الصورة الجديدة وتشغيل النظام
             echo "${{ secrets.DOCKERHUB_TOKEN }}" | sudo docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
             sudo docker pull ${{ secrets.DOCKERHUB_USERNAME }}/akaunting-app:latest
             
             sudo docker compose down || true
             sudo docker compose up -d
 
-            # 4. تنظيف الصور القديمة لتوفير المساحة
             sudo docker image prune -f
 
-            echo "Deployment finished successfully! 🚀"
+            echo "Deployment finished successfully!"

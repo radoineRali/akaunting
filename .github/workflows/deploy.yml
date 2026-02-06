@@ -9,8 +9,8 @@ jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     environment: Deploy_Akaunting
-    steps:
 
+    steps:
     # 1️⃣ Checkout code
     - name: Checkout code
       uses: actions/checkout@v4
@@ -19,15 +19,20 @@ jobs:
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
 
-    # 3️⃣ Build Docker image locally
+    # 3️⃣ Build Docker image
     - name: Build Docker image
-      run: docker build -t akaunting-app:latest .
+      run: |
+        docker build -t akaunting-app:latest .
 
-    # 4️⃣ Save Docker image as tar
+    # 4️⃣ Verify image exists
+    - name: List Docker images
+      run: docker images
+
+    # 5️⃣ Save Docker image to tar
     - name: Save Docker image
       run: docker save akaunting-app:latest -o akaunting-app.tar
 
-    # 5️⃣ Copy tar file to EC2 via SSH
+    # 6️⃣ Copy tar to EC2
     - name: Copy Docker image to EC2
       uses: appleboy/scp-action@master
       with:
@@ -37,7 +42,7 @@ jobs:
         source: "akaunting-app.tar"
         target: "/home/${{ vars.EC2_USER }}/akaunting-app.tar"
 
-    # 6️⃣ Load Docker image and deploy on EC2
+    # 7️⃣ Deploy on EC2
     - name: Deploy on EC2
       uses: appleboy/ssh-action@v1.0.3
       with:
@@ -49,10 +54,11 @@ jobs:
           docker load -i /home/${{ vars.EC2_USER }}/akaunting-app.tar
 
           echo "Go to project directory"
-          cd akaunting || exit
+          mkdir -p /home/${{ vars.EC2_USER }}/akaunting
+          cd /home/${{ vars.EC2_USER }}/akaunting || exit
 
           echo "Stop current containers"
-          docker compose down
+          docker compose down || true
 
           echo "Start new containers"
           docker compose up -d
